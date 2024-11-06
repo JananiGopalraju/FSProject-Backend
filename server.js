@@ -62,6 +62,53 @@ const movieSchema = new mongoose.Schema({
     }
   });
 
+// getting movies using id
+  app.get("/api/movies/:id", async (req,res) => {
+    try {
+      const movie = await Movie.findById(req.params.id);
+
+      if(movie) {
+        res.status(200).json(movie);
+      } else {
+        res.status(404).json({ message: "Movie not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching movie", error });   
+    }
+    });
+
+    // updating a movie
+    app.put("/api/movies/:id", async (req, res) => {
+      try {
+        const updatedMovie = await Movie.findByIdAndUpdate(req.params.id, req.body, { new: true });
+
+        if(updatedMovie) {
+          res.status(200).json(updatedMovie);
+        }
+        else {
+          res.status(404).json({ message: "Movie not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error updating movie", error });
+      }
+    });
+
+    // deleting a movie
+    app.delete("/api/movies/:id", async (req, res) => {
+      try {
+        const deletedMovie = await Movie.findByIdAndDelete(req.params.id);
+
+        if(deletedMovie) {
+          res.status(200).json({ message: `Movie with id ${req.params.id} deleted` });
+        }
+        else {
+          res.status(404).json({ message: "Movie not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error deleting movie", error });
+      }
+    });
+
 
 
 // -----------------------------------------------------------------------------------
