@@ -1,22 +1,43 @@
-// server.js
+
+
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import multer from "multer";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 
-dotenv.config(); // Load environment variables from .env file
+dotenv.config();
 
 const app = express();
 app.use(express.json());
-app.use(cors()); // Enable CORS for all routes
+app.use(cors());
+app.use(express.urlencoded({ extended: false }));
 
-app.use(express.urlencoded({ extended: true }));
+// Setup file path handling
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve static files from uploads folder
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Configure Multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/"); // Folder to store images
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Unique filename
+  },
+});
+
+const upload = multer({ storage });
 
 // MongoDB connection
 const uri = process.env.MONGODB_URI;
-
-mongoose
-  .connect(uri)
+mongoose.connect(uri)
   .then(() => {
     console.log("MongoDB connected");
   })
@@ -24,135 +45,105 @@ mongoose
     console.error("MongoDB connection error:", err);
   });
 
-
-  // creating a model named "movie"
+// Define Movie schema
 const movieSchema = new mongoose.Schema({
-    course: { type: String, required: true},
-    description: { type: String, required: true},
-  });
-   const Movie = mongoose.model("Movie", movieSchema);
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  genre: { type: String, required: true },
+  releaseYear: { type: Number, required: true },
+  images: { type: [String] }, // Array to store image URLs
+});
 
+const Movie = mongoose.model("Movie", movieSchema);
 
-   // creating a new movie and posting it in model "movie"
-  app.post("/api/movies", async (req, res) => {
-    const newMovie = new Movie ({
-      course : req.body.course,
-      description : req.body.description,
-    });
-    
-    try {
-      const savedMovies = await newMovie.save();
-      res.status(200).json(savedMovies);
-    }
-    catch (err) {
-      res.status(400).json({ message: "ERROR creating new movie"});
-    }
-  });
+// Create a new movie with multiple images
+app.post("/api/movies", upload.array("images", 5), async (req, res) => {
+  const imageUrls = req.files.map((file) => `/uploads/${file.filename}`);
 
-
-  // getting all movies or limiting them
-  app.get("/api/movies", async (req, res) => {
-    try {
-      const limit = Number(req.query.limit);
-      const movies = limit ? await Movie.find().limit(limit) : await Movie.find();
-      res.status(200).json(movies);
-    }
-    catch (error) {
-      res.status(400).json({ message: "Error fetching movies", error });
-    }
+  const newMovie = new Movie({
+    title: req.body.title,
+    description: req.body.description,
+    genre: req.body.genre,
+    releaseYear: req.body.releaseYear,
+    images: imageUrls,
   });
 
-// getting movies using id
-  app.get("/api/movies/:id", async (req,res) => {
-    try {
-      const movie = await Movie.findById(req.params.id);
+  try {
+    const savedMovie = await newMovie.save();
+    res.status(200).json(savedMovie);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-      if(movie) {
-        res.status(200).json(movie);
-      } else {
-        res.status(404).json({ message: "Movie not found" });
-      }
-    } catch (error) {
-      res.status(500).json({ message: "Error fetching movie", error });   
+// Get all movies
+app.get("/api/movies", async (req, res) => {
+  try {
+    const limit = Number(req.query.limit);
+    const movies = limit ? await Movie.find().limit(limit) : await Movie.find();
+    res.status(200).json(movies);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get movie by ID
+app.get("/api/movies/:id", async (req, res) => {
+  try {
+    const movie = await Movie.findById(req.params.id);
+    res.status(200).json(movie);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update movie with optional new images
+app.put("/api/movies/:id", upload.array("images", 10), async (req, res) => {
+  const updateData = {
+    title: req.body.title,
+    description: req.body.description,
+    genre: req.body.genre,
+    releaseYear: req.body.releaseYear,
+  };
+
+  if (req.files && req.files.length > 0) {
+    updateData.images = req.files.map((file) => `/uploads/${file.filename}`);
+  }
+
+  try {
+    const movie = await Movie.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    if (movie) {
+      res.status(200).json(movie);
+    } else {
+      res.status(404).json("ID does not exist");
     }
-    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-    // updating a movie
-    app.put("/api/movies/:id", async (req, res) => {
-      try {
-        const updatedMovie = await Movie.findByIdAndUpdate(req.params.id, req.body, { new: true });
-
-        if(updatedMovie) {
-          res.status(200).json(updatedMovie);
-        }
-        else {
-          res.status(404).json({ message: "Movie not found" });
-        }
-      } catch (error) {
-        res.status(500).json({ message: "Error updating movie", error });
-      }
-    });
-
-    // deleting a movie
-    app.delete("/api/movies/:id", async (req, res) => {
-      try {
-        const deletedMovie = await Movie.findByIdAndDelete(req.params.id);
-
-        if(deletedMovie) {
-          res.status(200).json({ message: `Movie with id ${req.params.id} deleted` });
-        }
-        else {
-          res.status(404).json({ message: "Movie not found" });
-        }
-      } catch (error) {
-        res.status(500).json({ message: "Error deleting movie", error });
-      }
-    });
-
-
-
-// -----------------------------------------------------------------------------------
-
-//  // creating a new post and posting it in model "post"
-//  app.post("/api/posts", async (req, res) => {
-//   const newPost = new Post ({
-//     course : req.body.course,
-//     description : req.body.description,
-//   });
-  
-//   try {
-//     const savedPosts = await newPost.save();
-//     res.status(200).json(savedPosts);
-//   }
-//   catch (err) {
-//     res.status(400).json({ message: "ERROR creating new movie"});
-//   }
-// });
-
-
-// // getting all posts or limiting them
-// app.get("/api/posts", async (req, res) => {
-//   try {
-//     const limit = Number(req.query.limit);
-//     const posts = limit ? await Post.find().limit(limit) : await Post.find();
-//     res.status(200).json(posts);
-//   }
-//   catch (error) {
-//     res.status(400).json({ message: "Error fetching posts", error });
-//   }
-// });
-
-
-
-
-
-
-
-
+// Delete movie and images
+app.delete("/api/movies/:id", async (req, res) => {
+  try {
+    const movie = await Movie.findByIdAndDelete(req.params.id);
+    if (movie) {
+      movie.images.forEach((image) => {
+        const imagePath = path.join(__dirname, image);
+        fs.unlink(imagePath, (err) => {
+          if (err) console.log("Error deleting file:", err);
+        });
+      });
+      res.status(200).json(movie);
+    } else {
+      res.status(404).json("ID does not exist");
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
-
