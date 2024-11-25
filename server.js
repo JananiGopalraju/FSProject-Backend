@@ -37,7 +37,8 @@ const upload = multer({ storage });
 
 // MongoDB connection
 const uri = process.env.MONGODB_URI;
-mongoose.connect(uri)
+mongoose
+  .connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("MongoDB connected");
   })
@@ -58,7 +59,7 @@ const Movie = mongoose.model("Movie", movieSchema);
 
 // Create a new movie with multiple images
 app.post("/api/movies", upload.array("images", 5), async (req, res) => {
-  const imageUrls = req.files.map((file) => `/uploads/${file.filename}`);
+  const imageUrls = req.files.map((file) => `${process.env.BASE_URL}/uploads/${file.filename}`);
 
   const newMovie = new Movie({
     title: req.body.title,
@@ -107,7 +108,7 @@ app.put("/api/movies/:id", upload.array("images", 10), async (req, res) => {
   };
 
   if (req.files && req.files.length > 0) {
-    updateData.images = req.files.map((file) => `/uploads/${file.filename}`);
+    updateData.images = req.files.map((file) => `${process.env.BASE_URL}/uploads/${file.filename}`);
   }
 
   try {
@@ -128,7 +129,7 @@ app.delete("/api/movies/:id", async (req, res) => {
     const movie = await Movie.findByIdAndDelete(req.params.id);
     if (movie) {
       movie.images.forEach((image) => {
-        const imagePath = path.join(__dirname, image);
+        const imagePath = path.join(__dirname, image.replace(`${process.env.BASE_URL}/`, ''));
         fs.unlink(imagePath, (err) => {
           if (err) console.log("Error deleting file:", err);
         });
@@ -145,5 +146,5 @@ app.delete("/api/movies/:id", async (req, res) => {
 // Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
